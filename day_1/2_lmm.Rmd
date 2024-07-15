@@ -1,0 +1,289 @@
+---
+title: "2_lmm"
+output: html_document
+date: "2024-07-06"
+---
+
+```{r}
+# Load the data
+gge1crit <- read.table("datasets/grodnergibson05data.txt", header = TRUE)
+
+# Contrast coding
+gge1crit$so <- ifelse(gge1crit$condition == "objgap", 1, -1)
+
+dat <- gge1crit
+dat$logrt <- log(dat$rawRT)
+bysubj <- aggregate(logrt ~ subject + so, data = dat, FUN = mean)
+```
+
+# Linear Regression (not the correct way of analysing data)
+```{r}
+# Fit LM
+m0 <- lm(logrt ~ so, dat)
+
+# Check the coefficients
+summary(m0)$coefficients
+```
+
+
+# Measurements are not independent!
+
+```{r, fig.width=16, fig.height=4}
+par(mfrow = c(1, 4))
+for (i in c(1, 28, 37, 38)){
+  d <- subset(dat, subject == i)
+  plot(d$so, d$logrt,
+       ylim = c(5, 8),
+       main = paste("Subject", i),
+       xlab = "Condition (-1 : SR, +1: OR)",
+       ylab = "RT (log)")
+  dagg <- aggregate(logrt ~ so, d, mean)
+  lines(dagg$so, dagg$logrt, col = "red")
+}
+
+```
+
+# Load the package
+ 
+```{r}
+#install.packages("lme4")
+library(lme4)
+library(performance)
+library(lattice)
+```
+
+# Fit a separate LM for each subject
+
+```{r}
+lmlist.fm1 <- lmList(logrt ~ so | subject, dat)
+```
+
+# Check the coefficients
+
+```{r}
+# Subject 1
+lmlist.fm1$`1`$coefficients
+
+# Subject 28
+lmlist.fm1$`28`$coefficients
+
+# Subject 37
+lmlist.fm1$`37`$coefficients
+
+# Subject 38
+lmlist.fm1$`38`$coefficients
+```
+
+# Mixed Effects Model
+
+```{r}
+t.test(coef(lmlist.fm1)[2])
+```
+
+# Equivalent to
+
+```{r}
+# T-test
+t.test(logrt ~ so, bysubj, paired = TRUE)$statistic
+
+# LMM
+summary(lmer(logrt ~ so + (1 | subject), bysubj))$coefficients[2, ]
+```
+
+```{r, fig.width=10, fig.height=10}
+xyplot(logrt ~ so | subject, data = dat, 
+       layout = c(6, 7), type = c("g", "p", "r"),
+       xlab = "Condition (-1 : SR, +1: OR)", 
+       ylab = "Reaction Time (ms)")
+```
+
+# Unaggregated Data
+
+```{r}
+m0.lmer <- lmer(logrt ~ so + (1 | subject), dat)
+summary(m0.lmer)
+```
+
+```{r}
+# Intraclass correlation coefficient (ICC): how strongly units in the same group resemble each other.
+
+## subj_var / (subj_var + residual_var)
+0.09983 / (0.09983 + 0.14618)
+
+icc(m0.lmer)[,1]
+```
+
+# Visualizing Random Effects
+
+```{r, fig.width=5, fig.height=5}
+print(dotplot(ranef(m0.lmer, condVar = TRUE)))
+```
+
+```{r}
+coef(m0.lmer)
+```
+
+# Random Slopes Model
+
+```{r}
+m1.lmer <- lmer(logrt ~ so + (1 + so || subject), dat)
+
+summary(m1.lmer)
+```
+
+# Visualizing random effects
+
+```{r, fig.width=10, fig.height=5}
+print(dotplot(ranef(m1.lmer, condVar = TRUE)))
+```
+
+```{r}
+coef(m1.lmer)
+```
+
+```{r}
+confint(m1.lmer, oldNames = FALSE)
+```
+
+# Shrinkage
+
+```{r}
+# Back to linear regression (no shrinkage!)
+m1 <- lm(logrt ~ so * factor(subject), dat) # here we added subject as a fixed effect.
+
+# Check the coefficients
+summary(m1)$coefficients
+```
+
+```{r}
+# Show the intercept of each subject
+s.intercept.list <- summary(lmlist.fm1)$coefficients[1:42]
+
+##### Show the intercept of each subject
+s.intercept.single <- rep(summary(m0.lmer)$coefficients[1,1], 42) + ranef(m0.lmer)$subject[,1]
+```
+
+```{r, fig.width=10, fig.height=5}
+### Now see 
+plot(x = 1:42, y = s.intercept.single, main = "Shrinkage", xaxt = "n",
+     xlab = "Subject", ylab = "Intercept", pch = 16, col = "blue", ylim = c(5, 7))
+points(x = 1:42, y = s.intercept.list, pch = 1)
+axis(1, at = 1:42, labels = 1:42)
+abline(h = summary(m0.lmer)$coefficients[1,1], col = "red", lwd = 1)
+text(x = 34, y = 5.8, substitute(paste(italic("Intercept = 5.88"))), col = "red")
+legend("bottomleft", legend = c("Single Model", "List of Models"), col = c("blue", "black"), pch = c(16, 1))
+
+```
+
+# Item-level random effects
+
+```{r, fig.width=16, fig.height=4}
+par(mfrow = c(1, 4))
+for (i in c(1, 9, 13, 16)){
+  d <- subset(dat, item == i)
+  plot(d$so, d$logrt,
+       ylim = c(5, 8),
+       main = paste("Item", i),
+       xlab = "Condition (-1 : SR, +1: OR)",
+       ylab = "RT (log)")
+  dagg <- aggregate(logrt ~ so, d, mean)
+  lines(dagg$so, dagg$logrt, col = "red")
+}
+```
+
+```{r}
+byitem <- aggregate(logrt ~ item + so, data = dat, FUN = mean)
+
+lmlist.fm2 <- lmList(logrt ~ so | item, dat)
+
+t.test(coef(lmlist.fm2)[2])
+```
+
+# Crossed subjects and item
+
+```{r}
+xtabs(~subject + item, dat)
+```
+
+```{r, fig.height=5, fig.width=10}
+par(mfrow = c(1, 2))
+boxplot(logrt ~ subject, data = dat)
+boxplot(logrt ~ item, data = dat)
+```
+
+# Linear mixed model with crossed subject and items random effects.
+
+```{r}
+m2.lmer <- lmer(logrt ~ so + (1 + so || subject) + (1 + so || item), dat)
+
+summary(m2.lmer)
+```
+
+# Visualizing random effects
+
+```{r, fig.width=10, fig.height=5}
+print(dotplot(ranef(m2.lmer, condVar = TRUE)))
+```
+
+```{r}
+coef(m2.lmer)
+```
+
+# Correlated random intercepts and slopes
+
+```{r}
+m3.lmer <- lmer(logrt ~ so + (1 + so | subject) + (1 + so | item), dat)
+
+summary(m3.lmer)
+```
+
+# Visualizing random effects
+
+```{r, fig.width=10, fig.height=5}
+print(dotplot(ranef(m3.lmer, condVar = TRUE)))
+```
+
+# Sometimes change of optimizer solves the problem.
+
+```{r}
+#install.packages("optimx")
+library(optimx)
+```
+
+```{r}
+m4.lmer <- lmer(logrt ~ so + (1 + so | subject) + (1 + so || item), dat,
+                # control = lmerControl(optimizer = "optimx",
+                #                       optCtrl = list(method = "nlminb"),
+                #                       boundary.tol = 1e-20)
+                )
+
+summary(m4.lmer)
+```
+
+##### Extra! #####
+
+# Model Comparison
+
+## Null Model
+
+```{r}
+m.null <- lmer(logrt ~ 1 + (1 + so | subject) + (1 + so || item), dat)
+
+summary(m.null)
+```
+
+```{r}
+anova(m.null, m4.lmer)
+```
+
+# Akaike Information Criterion
+
+```{r}
+AIC(m.null, m0.lmer, m1.lmer, m2.lmer, m4.lmer)
+```
+
+# Bayesian Information Criterion
+
+```{r}
+BIC(m.null, m0.lmer, m1.lmer, m2.lmer, m4.lmer)
+```

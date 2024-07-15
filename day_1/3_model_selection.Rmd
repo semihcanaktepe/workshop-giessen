@@ -1,0 +1,87 @@
+---
+title: "3_model_selection"
+output: html_document
+date: "2024-07-07"
+---
+
+```{r}
+library(lme4)
+```
+
+# Model selection and interpreting the results
+
+```{r}
+dat <- read.table("datasets/gibsonwu2012datarepeat.txt", header = TRUE)
+dat$condition <- as.factor(dat$condition)
+contrasts(dat$condition) <- contr.sum(2)
+```
+
+# Check the distribution of RT
+
+```{r}
+hist(dat$rt)
+```
+
+# Log-transform RT
+
+```{r}
+hist(log(dat$rt))
+```
+
+# Alternative models
+
+```{r}
+# One random intercept only
+m1 <- lmer(log(rt) ~ condition + (1 | subj), dat)
+
+# Two random intercepts
+m2 <- lmer(log(rt) ~ condition + (1 | subj) + (1 | item), dat)
+
+# Uncorrelated random slopes
+m3 <- lmer(log(rt) ~ condition + (1 + condition || subj) + (1 + condition || item), dat)
+
+# Correlated random slopes
+m4 <- lmer(log(rt) ~ condition + (1 + condition | subj) + (1 + condition | item), dat)
+```
+
+
+# Go for the maximal model as long as it converges (Barr et al., 2013)
+
+# If there is no difference between the models, then go for the parsimonious model (Bates et al., 2015)
+
+```{r}
+anova(m1, m2)
+
+anova(m2, m3)
+
+anova(m2, m4)
+```
+
+# Check if a predictor is significant
+
+```{r}
+# Null  model (without any predictor)
+m4.null <- lmer(log(rt) ~ 1 + (1 + condition || subj) + (1 + condition || item), dat)
+
+# Alternative model
+m4 <- lmer(log(rt) ~ condition + (1 + condition | subj) + (1 + condition | item), dat)
+```
+
+```{r}
+anova(m4.null, m4)
+```
+
+# Getting p-values
+
+```{r}
+# install.packages("lmerTest")
+library(lmerTest)
+```
+
+# Now see the summary
+
+```{r}
+m4 <- lmer(log(rt) ~ condition + (1 + condition | subj) + (1 + condition | item), dat)
+
+summary(m4)
+```
