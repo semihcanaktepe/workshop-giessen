@@ -1,0 +1,201 @@
+---
+title: "4_practice"
+output: html_document
+date: "2024-07-07"
+---
+
+```{r}
+library(lme4)
+library(lmerTest)
+library(ggplot2)
+library(dplyr)
+library(emmeans)
+```
+
+```{r}
+dat <- read.table("datasets/persiane1crit.txt", header = TRUE)
+```
+
+```{r}
+dat$subj <- as.factor(dat$subj)
+dat$item <- as.factor(dat$item)
+dat$distance <- as.factor(dat$distance)
+dat$predictability <- as.factor(dat$predability)
+```
+
+```{r}
+contrasts(dat$distance) <- 0.5 * contr.sum(2)
+contrasts(dat$predictability) <- -0.5 * contr.sum(2)
+```
+
+```{r}
+hist(dat$rt)
+```
+
+```{r}
+hist(log(dat$rt))
+```
+
+```{r}
+dat$logRT <- log(dat$rt)
+```
+
+```{r}
+df <- dat %>% #filter(rt < 2000) %>% 
+  group_by(distance, predictability) %>% 
+  summarise(mean_rt = mean(rt),
+            sd_rt = sd(rt),
+            obs = n()) %>% 
+  mutate(se = sd_rt/sqrt(obs),
+         lower = mean_rt - 2*se,
+         upper = mean_rt + 2*se)
+```
+
+
+```{r, fig.width=5, fig.height=5}
+# Bar plot
+p <- ggplot(df, aes(x = predictability, y = mean_rt, fill = distance)) + 
+  geom_bar(stat = "identity", color = "black", 
+           position = position_dodge()) +
+  geom_errorbar(aes(ymin = lower, ymax = upper), width = 0.2,
+                 position = position_dodge(0.9)) +
+  labs(title = "Reaction Times by Condition",
+       caption = "Error bars corresponds to 95% CI",
+       x = "Predictability",
+       y = "Reaction Time",
+       fill = "Distance") + theme_light()
+print(p)
+```
+
+# Building the model
+
+```{r}
+m1 <- lmer(log(rt) ~ predictability*distance +
+             (1 + predictability + distance | subj) +
+             (1 + predictability + distance | item),
+           data = dat)
+
+summary(m1)
+```
+
+```{r}
+m2 <- lmer(log(rt) ~ predictability*distance +
+             (1 | subj) +
+             (1 | item),
+           data = dat)
+
+summary(m2)
+```
+
+```{r}
+confint(m2, oldNames = FALSE)
+```
+
+# Back-transform the estimates
+
+```{r}
+# Estimates
+a <- summary(m2)$coefficients[1, 1]
+bp <- summary(m2)$coefficients[2, 1]
+bd <- summary(m2)$coefficients[3, 1]
+bi <- summary(m2)$coefficients[4, 1]
+```
+
+# Difference between predicatible and unpredictable
+
+```{r}
+pred <- exp(a + -0.5 * bp)
+unpred <- exp(a + 0.5 * bp)
+
+unpred - pred
+```
+
+# Automatically back-transform with emmeans
+
+```{r}
+## Pairwise comparison
+emm.m2.pred <- emmeans(m2, ~ predictability, type = "response")
+
+# 95% CI
+summary(emm.m2.pred)
+```
+
+# Difference between long and short
+
+```{r}
+long <- exp(a + 0.5 * bd)
+short <- exp(a + -0.5 * bd)
+
+long - short
+```
+
+```{r}
+## Pairwise comparison
+emm.m2.dist <- emmeans(m2, ~ distance, type = "response")
+
+# 95% CI
+summary(emm.m2.dist)
+```
+
+# Along with interactions
+
+```{r}
+pred_long <- exp(a + -0.5 * bp + 0.5 * bd + -0.25 * bi)
+pred_short <- exp(a + -0.5 * bp + -0.5 * bd + 0.25 * bi)
+unpred_long <- exp(a + 0.5 * bp + 0.5 * bd + 0.25 * bi)
+unpred_short <- exp(a + 0.5 * bp + -0.5 * bd + -0.25 * bi)
+```
+
+# Pair-wise comparisons
+
+```{r}
+emm.m2.int <- emmeans(m2, ~ predictability*distance, type = "response")
+
+summary(emm.m2.int)
+
+pairs(emm.m2.int, adjust = "tukey")
+```
+
+# Visualize the comparisons for better readability
+
+```{r}
+m <- plot(emm.m2.int, ylab = "Variables", xlab = "Estimates with 95% CI")
+m + theme_bw() + labs(title = "Estimated Marginal Means")
+```
+
+
+# ANOVA
+
+```{r}
+bysubj <- aggregate(logRT ~ subj + predictability + distance, dat, mean)
+
+byitem <- aggregate(logRT ~ item + predictability + distance, dat, mean)
+```
+
+
+```{r}
+f1.anova <- aov(logRT ~ predictability*distance + Error(subj/(predictability*distance)), data = bysubj)
+
+f2.anova <- aov(logRT ~ predictability*distance + Error(item/(predictability*distance)), data = byitem)
+```
+
+```{r}
+summary(f1.anova)
+```
+
+```{r}
+summary(f2.anova)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
