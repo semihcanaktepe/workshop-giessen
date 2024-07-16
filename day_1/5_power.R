@@ -3,6 +3,7 @@ library(simr)
 library(lme4)
 library(lmerTest)
 library(dplyr)
+library(MASS)
 
 
 # Data simulation function
@@ -27,16 +28,33 @@ simulate_data <- function(n_subjects = 50, n_items = 18) {
   items <- 1:n_items
   
   # Generate random effects (u and v)
-  u0 <- rnorm(n_subjects, 0, sd_subject_intercept)
-  u_time <- rnorm(n_subjects, 0, sd_subject_time)
+  # u0 <- rnorm(n_subjects, 0, sd_subject_intercept)
+  # u_time <- rnorm(n_subjects, 0, sd_subject_time)
   v0 <- rnorm(n_items, 0, sd_item_intercept)
   v_modality <- rnorm(n_items, 0, sd_item_modality)
   v_time <- rnorm(n_items, 0, sd_item_time)
+  
+  ## If you want correlated random intercept and slope for subjects
+  ## Correlation between the intercept and slope
+  rho <- 0.5
+  
+  ## Covariance matrix
+  cov <- matrix(c(sd_subject_intercept^2, rho * sd_subject_intercept * sd_subject_time,
+                  rho * sd_subject_intercept * sd_subject_time, sd_subject_time^2),
+                nrow = 2, ncol = 2)
+  
+  ## Generate the random intercepts and slopes for subjects
+  x <- mvrnorm(n_subjects, mu = c(0, 0), Sigma = cov)
+  
+  ## Assign the generated values to u0 and u_time variables
+  u0 <- x[,1]
+  u_time <- x[,2]
   
   # Create the data frame
   data_olfactory <- expand.grid(Subject = subjects_olf, Item = items, Modality = -0.5, Time = c(-0.5, 0.5))
   data_visual <- expand.grid(Subject = subjects_vis, Item = items, Modality = 0.5, Time = c(-0.5, 0.5))
   
+  # Merge two groups of data
   data <- rbind(data_olfactory, data_visual)
   data$rt <- NA 
   
@@ -59,13 +77,13 @@ simdat <- simulate_data(50, 18)
 aggregate(rt ~ Time + Modality, data = simdat, FUN = mean)
 
 # Check variable names
-model <- lmer(rt ~ Modality*Time + (1 + Time || Subject) + (1 + Modality + Time || Item), data = simdat)
+model <- lmer(rt ~ Modality*Time + (1 + Time | Subject) + (1 + Modality + Time | Item), data = simdat)
 summary(model)
 
 # Function to perform one simulation and analysis
 run_simulation <- function(n_subjects = 50, n_items = 18) {
   data <- simulate_data(n_subjects, n_items)
-  model <- lmer(rt ~ Modality*Time + (1 + Time || Subject) + (1 + Modality + Time || Item), data = data)
+  model <- lmer(rt ~ Modality*Time + (1 + Time | Subject) + (1 + Modality + Time | Item), data = data)
   return(summary(model)$coefficients)
 }
 
@@ -126,5 +144,4 @@ lines(sample_sizes,
 abline(h = 0.80, lty = 2)
 legend("bottomright", legend = c("Modality", "Time", "Interaction"),
        col = c("red", "blue", "orange"), lwd = 2, lty = c(1, 3, 4))
-
 
