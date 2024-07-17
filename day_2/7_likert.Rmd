@@ -1,0 +1,96 @@
+---
+title: "7_likert"
+author: "Semih Can Aktepe"
+date: "2024-07-17"
+output: html_document
+---
+
+```{r}
+## Load the necessary package to fit linear mixed effects model with ordinal categorical distribution
+## Cumulative Link Mixed Model
+library(ordinal)
+library(emmeans)
+library(readr)
+library(dplyr)
+library(lme4)
+library(lmerTest)
+```
+
+```{r}
+dat <- read_delim("datasets/Trolley.csv", delim = ";", escape_double = FALSE, trim_ws = TRUE)
+```
+
+```{r}
+dat$id <- as.factor(dat$id)
+dat$story <- as.factor(dat$story)
+```
+
+```{r}
+# Descriptive statistics
+df <- dat %>%
+  group_by(action, intention, contact) %>% 
+  summarise(mean_rating = mean(response),
+            sd_rating = sd(response),
+            obs = n()) %>% 
+  mutate(se = sd_rating/sqrt(obs),
+         lower = mean_rating - 2*se,
+         upper = mean_rating + 2*se)
+df
+```
+
+```{r}
+# Linear mixed model
+m.lmer <- lmer(response ~ action + intention + contact + (1 | id), data = dat)
+
+summary(m.lmer)
+```
+
+```{r}
+hist(dat$response)
+```
+
+```{r, fig.width=6, fig.height=9}
+# Frequency of responses
+par(mfrow = c(3,2))
+for (i in 0:1) {
+  for (j in 0:1) {
+    for (k in 0:1) {
+      d <- subset(dat, action == i & intention == j & contact == k)
+      hist(d$response,
+           main = paste("Action =", i,
+                        "Intention =", j,
+                        "Contact =", k),
+           xlab = "Response",
+           ylab = "Frequency")
+    }
+  }
+}
+```
+
+```{r}
+# Responses need to be factor!
+dat$response <- as.factor(dat$response)
+```
+
+```{r}
+## Fit the cumulative link mixed model
+m.clmm <- clmm(response ~ action + intention + contact + (1 | id), data = dat, threshold = "flexible")
+
+summary(m.clmm)
+```
+
+```{r}
+## Post-hoc analysis
+emm.clmm <- emmeans(m.clmm, ~ action + intention + contact)
+pairs(emm.clmm, adjust="tukey")
+```
+
+```{r}
+# Visualize the comparisons for better readability
+p <- plot(emm.clmm, ylab = "Variables", xlab = "Estimates with 95% CI", colors = c("dodgerblue3", "dodgerblue3"))
+p + theme_bw() + labs(title = "Estimated Marginal Means")
+```
+
+```{r}
+summary(emm.clmm, type = "response")
+```

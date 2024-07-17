@@ -1,0 +1,56 @@
+---
+title: "6_sdt"
+author: "Semih Can Aktepe"
+date: "2024-07-17"
+output: html_document
+---
+
+```{r}
+# Load the packages
+library(lme4)
+library(lmerTest)
+library(ggplot2)
+library(dplyr)
+library(emmeans)
+library(optimx)
+```
+
+```{r}
+load("~/Downloads/workshop-giessen-main/day_2/datasets/schmidt2024study1.Rda")
+dat <- schmidt2024study1
+```
+
+```{r}
+# Contrast coding
+contrasts(dat$repetition) <- -0.5 * contr.sum(2)
+contrasts(dat$status) <- -0.5 * contr.sum(2)
+```
+
+```{r}
+# Compute the rates
+rates <- aggregate(response ~ repetition + status, data = dat, FUN = mean)
+```
+
+```{r}
+# Compute c and d' values
+c_new <- - 0.5 * (qnorm(rates[3, 3]) + qnorm(rates[1, 3]))
+c_rep <- - 0.5 * (qnorm(rates[4, 3]) + qnorm(rates[2, 3]))
+d_new <- qnorm(rates[3, 3]) - qnorm(rates[1, 3])
+d_rep <- qnorm(rates[4, 3]) - qnorm(rates[2, 3])
+```
+
+```{r}
+para_raw <- c(0.5 * (c_new + c_rep),
+              c_rep - c_new,
+              0.5 * (d_new + d_rep),
+              d_rep - d_new)
+```
+
+```{r}
+m <- glmer(response ~ repetition*status + (1 + repetition + status | subject) + (1 | statement),
+           family = binomial(link = "probit"), data = dat,
+           control = glmerControl(optimizer = "optimx",
+                                  optCtrl = list(method = "nlminb")))
+
+summary(m)
+```

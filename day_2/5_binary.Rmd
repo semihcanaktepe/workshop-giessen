@@ -1,0 +1,115 @@
+---
+title: "5_binary"
+author: "Semih Can Aktepe"
+date: "2024-07-17"
+output: html_document
+---
+
+```{r}
+# Load the packages
+library(lme4)
+library(lmerTest)
+library(ggplot2)
+library(dplyr)
+library(emmeans)
+```
+
+```{r}
+# Load the data
+dat <- read.csv("datasets/response.csv")
+```
+
+```{r}
+# Convert categorical variables into factors
+dat$id <- as.factor(dat$id)
+dat$subject <- as.factor(dat$subject)
+dat$group <- as.factor(dat$group)
+dat$item <- as.factor(dat$item)
+dat$condition <- as.factor(dat$condition)
+dat$outcome <- as.factor(dat$outcome)
+```
+
+```{r}
+# Contrast coding
+contrasts(dat$group) <- 0.5 * contr.sum(2)
+contrasts(dat$condition) <- -0.5 * contr.sum(2)
+contrasts(dat$outcome) <- 0.5 * contr.sum(2)
+```
+
+```{r}
+df <- dat %>%
+  group_by(group, condition) %>% 
+  summarise(mean_acc = mean(accuracy),
+            sd_acc = sd(accuracy),
+            obs = n()) %>% 
+  mutate(se = sd_acc/sqrt(obs),
+         lower = mean_acc - 2*se,
+         upper = mean_acc + 2*se)
+```
+
+```{r, fig.width=4, fig.height=3}
+# Bar plot
+p <- ggplot(df, aes(x = condition, y = mean_acc, fill = group)) + 
+  geom_bar(stat = "identity", color = "black", 
+           position = position_dodge()) +
+  geom_errorbar(aes(ymin = lower, ymax = upper), width = 0.2,
+                 position = position_dodge(0.9)) +
+  labs(title = "Response Accuracy by Condition",
+       caption = "Error bars correspond to 95% CI",
+       x = "Type of Conditional Sentence",
+       y = "Proportion of Accuracy",
+       fill = "Group") + theme_light()
+print(p)
+```
+
+```{r}
+# Maximal model
+m1 <- glmer(accuracy ~ group*condition + (1 + condition | subject) + (1 + group | item),
+            family = binomial(link = "logit"), data = dat)
+```
+
+```{r}
+# Simplify the random effects structure
+m2 <- glmer(accuracy ~ group*condition + (1 + condition | subject) + (1 | item),
+            family = binomial(link = "logit"), data = dat)
+```
+
+```{r}
+# Check the summary
+summary(m2)
+```
+
+# Interpreting the results
+
+```{r}
+# Estimates
+a <- summary(m2)$coefficients[1, 1]
+bg <- summary(m2)$coefficients[2, 1]
+bc <- summary(m2)$coefficients[3, 1]
+bi <- summary(m2)$coefficients[4, 1]
+```
+
+```{r}
+# Difference in accuracy between adults and children
+p_adult <- plogis(a + 0.5 * bg)
+p_child <- plogis(a + -0.5 * bg)
+
+p_adult - p_child
+```
+
+```{r}
+# Difference in accuracy between counterfactual and indicative conditionals
+p_cf <- plogis(a + -0.5 * bc)
+p_ind <- plogis(a + 0.5 * bc)
+
+# Multiply with 100 to get the percentage
+(p_ind - p_cf) * 100 
+```
+
+```{r}
+## Pairwise comparison
+emm.m2.pred <- emmeans(m2, ~ group*condition, type = "response")
+
+# 95% CI
+summary(emm.m2.pred)
+```
